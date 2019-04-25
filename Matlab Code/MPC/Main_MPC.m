@@ -114,7 +114,7 @@ controller5 = optimizer(con,obj,ops,[x(:,1);SOC(1);d(:);price(:);sb(:);PV(:)],[u
 
 % [constraints, obj,u,y,d,x] = constraint_generator(A,Bu,C,Bd,N,yref,R,building);
 
-%% Convetional On/Off controller
+%% Calculate the energy self - consumption
 
 index = find(et>0);
 Consumed_grid = sum(et(index))/3;
@@ -123,7 +123,8 @@ Injected_grid = sum(et(index1))/3;
 Total_energy_consumed = sum(sum(ut5))/3;
 Self_consumption = Total_energy_consumed - Consumed_grid;
 PV_energy = sum(PV_power(1:505))/3;
-%%
+
+%% Plot
 figure
 subplot(2,1,1)
 plot(t5,xbt(1,:),t5,power_PV(1:505))
@@ -146,11 +147,4 @@ hold on
 plot(t5,10*cpt5(1,:),'r')
 legend('Power to storage Purchased (v)','High/Low Price Time','PV power')
 xlabel('Hours');
-ylabel('Power input to the Storage (kW) - PV power');
-
-%Consumed from the grid 1.4225e+03
-
-%Injected to the grid -8.0897e-11
-
-% [xt1, yt1, ut1, t1] = simBuild([], 505, @shiftPred, N, 4);
- 
+ylabel('Power input to the Storage (kW) - PV power'); 
