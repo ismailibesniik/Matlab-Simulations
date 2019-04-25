@@ -18,7 +18,7 @@
 % xbt - State of the battery storage as a function of time
 
 
-function [ xt, yt, ut, t, et, xbt, cost_battery, vt, cpt] = simBuildStorage(controller, T, fhandle, N)
+function [ xt, yt, ut, t, et, xbt, cost, vt, cpt] = simBuildStorage(controller, T, fhandle, N)
 load building.mat;
 load battery.mat;
 load PV_power;
@@ -32,8 +32,8 @@ Ts = ssM.timestep;
 % Parameters of the Storage Model
 a = ssModel.A;
 b = ssModel.Bu; 
-b_ch = 0.97;
-b_dch= 1.1;
+b_ch = 0.97; %Battery charging efficiency coeficient 
+b_dch= 1.1; % Battery discharging efficiency coeficient 
 
 x = x0red;
 xb = 0;%initial battery state of charge
@@ -57,7 +57,7 @@ vt = zeros(1,T);
 
 cpt = zeros(1,T);
 sbt = zeros(1,T);
-cost_battery=0;
+cost = 0;
 
 for i = 1:T
 [d_pred, cp, sb, PV_pred] = fhandle(i, N);
@@ -73,7 +73,9 @@ sbt(:,i) = sb(1,1);
 
 yt(:,i) = C*x;
 t(1,i) = i;
-cost_battery=cost_battery+cpt(:,i)*et(:,i);
+if(et(:,i)>0)
+cost = cost + cpt(:,i)*et(:,i);
+end
 
 disp(['Iteration ' int2str(i)]);
 yalmiperror(id);

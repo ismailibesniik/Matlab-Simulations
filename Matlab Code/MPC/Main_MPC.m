@@ -109,21 +109,19 @@ for i=1:N-1
 end
 ops = sdpsettings('verbose',1, 'solver', '+gurobi');
 controller5 = optimizer(con,obj,ops,[x(:,1);SOC(1);d(:);price(:);sb(:);PV(:)],[u;p_b;p]);
-[xt5, yt5, ut5, t5, et, xbt, cost_battery, vt5, cpt5] = simBuildStorage(controller5, T, @shiftPred, N);
-
-
-% [constraints, obj,u,y,d,x] = constraint_generator(A,Bu,C,Bd,N,yref,R,building);
+[xt5, yt5, ut5, t5, et, xbt, cost_grid, vt5, cpt5] = simBuildStorage(controller5, T, @shiftPred, N);
 
 %% Calculate the energy self - consumption
 
-index = find(et>0);
-Consumed_grid = sum(et(index))/3;
-index1 = find(et<0);
-Injected_grid = sum(et(index1))/3;
-Total_energy_consumed = sum(sum(ut5))/3;
-Self_consumption = Total_energy_consumed - Consumed_grid;
-PV_energy = sum(PV_power(1:505))/3;
-
+index = find(et>0); %Indexes of the consumed energy from the grid
+Consumed_grid = sum(et(index))/3; %Energy consumed from the grid
+index1 = find(et<0); %Indexes of the injected energy to the grid 
+Injected_grid = sum(et(index1))/3; %Energy injected to the grid
+Total_energy_consumed = sum(sum(ut5))/3; %Total energy consumed
+Self_consumption = Total_energy_consumed - Consumed_grid; %Self-consumed energy
+PV_energy = sum(PV_power(1:505))/3; %Energy produced by the PVs
+cost_feed_in = Injected_grid*0.0543; %Feed-in profit
+total_electricity_cost = cost_grid - cost_feed_in; %Total electricity cost
 %% Plot
 figure
 subplot(2,1,1)
