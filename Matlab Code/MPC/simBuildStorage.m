@@ -74,7 +74,7 @@ sbt(:,i) = sb(1,1);
 yt(:,i) = C*x;
 t(1,i) = i;
 if(et(:,i)>0)
-cost = cost + cpt(:,i)*et(:,i);
+cost = cost + cpt(:,i)*et(:,i)/3;
 end
 
 disp(['Iteration ' int2str(i)]);

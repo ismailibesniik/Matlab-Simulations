@@ -12,7 +12,7 @@ load battery.mat;
 load PV_power;
 
 %Increasing the power production to 150%
-PV_power = 1.5*power_PV; 
+PV_power = 1*power_PV; 
 
 % Parameters of the Building Model
 A  = ssM.A;

@@ -71,8 +71,8 @@ s_ch    = sdpvar(N,1,'full'); %Surplus variable
 %Limits
 umax    = 15; %kW -> Maximum power of the HP
 umin    = 0;  %kW -> Minimum power of the HP
-ymax    = 26; %C  -> Maximum temperature in all the zones
-ymin    = 22; %C  -> Minimum temperature in all the zones
+ymax    = 24; %C  -> Maximum temperature in all the zones
+ymin    = 20; %C  -> Minimum temperature in all the zones
 SOCmax  = 20; %kWh -> Battery capacity
 SOCmin  = 0; %kWh -> Minimum SOC
 p_bmax  = 20; %kW -> Ramp up power of the battery
@@ -103,20 +103,19 @@ for i=1:N-1
         SOC(i+1) == a*SOC(i) + b_ch*p_ch(i)/3 + b_dch*p_dch(i)/3 %battery state evolution
        ];   
    
-   con=[con, ymin - eps - sb(i) <= y(:,i+1) <= ymax + eps + sb(i), eps>=0];%zone temperature constraints
-   obj = obj + price(i)*p_plus(i) + eps'*S*eps;
+   con=[con, ymin - eps <= y(:,i+1) <= ymax + eps , eps>=0];%zone temperature constraints
+   obj = obj + price(i)*p_plus(i) + eps'*S*eps + (y(:,i+1) - yref)'*R*(y(:,i+1) - yref);
 
 end
 ops = sdpsettings('verbose',1, 'solver', '+gurobi');
 controller5 = optimizer(con,obj,ops,[x(:,1);SOC(1);d(:);price(:);sb(:);PV(:)],[u;p_b;p]);
 [xt5, yt5, ut5, t5, et, xbt, cost_grid, vt5, cpt5] = simBuildStorage(controller5, T, @shiftPred, N);
-
 %% Calculate the energy self - consumption
 
 index = find(et>0); %Indexes of the consumed energy from the grid
 Consumed_grid = sum(et(index))/3; %Energy consumed from the grid
 index1 = find(et<0); %Indexes of the injected energy to the grid 
-Injected_grid = sum(et(index1))/3; %Energy injected to the grid
+Injected_grid = (-1)*sum(et(index1))/3; %Energy injected to the grid
 Total_energy_consumed = sum(sum(ut5))/3; %Total energy consumed
 Self_consumption = Total_energy_consumed - Consumed_grid; %Self-consumed energy
 PV_energy = sum(PV_power(1:505))/3; %Energy produced by the PVs
