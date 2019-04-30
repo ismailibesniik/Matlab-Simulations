@@ -18,7 +18,7 @@
 
 
 
-function [ xt, yt, ut, t ,cost] = simBuild( controller, T, fhandle, N, option)
+function [ xt, yt, ut, t ,cost_grid, cpt] = simBuild( controller, T, fhandle, N, option)
 
 %T=simulation duration in time samples
 load building.mat;
@@ -33,7 +33,7 @@ Ts =60;% ssM.timestep;
 % Parameters of the Storage Model
 a = ssModel.A;
 b = ssModel.Bu; 
-yref=[22;22;22];
+yref=[24;24;24];
 umax = 15; %kW
 umin = 0;  %kW
 
@@ -54,14 +54,11 @@ cpt = zeros(1,T);
 
 %cost
 c=0.2;
-cost=0;
+cost_grid=0;
 derivative = 0;
 last_error = 0;
 error= 0;
 integral = [0;0;0];
-Kp=[0.7;0.4;0.7];
-Ki=[2;0.8;2];
-Kd=0;
 %% Simulating the system and the controller
 for i = 1:T 
 [d_pred, cp, sb] = fhandle(i, N);
@@ -75,6 +72,7 @@ elseif option == 3      % Variable cost and night-setbacks
 cpt(:,i) = cp(1,1);
 sbt(:,i) = sb(1,1);
 elseif option == 4
+cpt(:,i) = cp(1,1);
 y=C*x;
 last_error = error;
 error = yref - y;
@@ -100,10 +98,13 @@ yt(:,i) = C*x;
 
 %calculate total costs
 if option==1
-    cost=cost+sum(c*ut(:,i));
+    cost_grid=cost_grid+sum(c*ut(:,i));
 elseif option==2 || option==3
-    cost=cost+sum(cpt(:,i)*ut(:,i));
+    cost_grid=cost_grid+sum(cpt(:,i)*ut(:,i));
 end
+
+cost_grid = cost_grid + sum(cpt(:,i)*ut(:,i))/3;
+
 t(1,i) = i;
 
 disp(['Iteration ' int2str(i)])

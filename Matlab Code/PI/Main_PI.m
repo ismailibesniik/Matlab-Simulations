@@ -12,7 +12,7 @@ clear all
 load building.mat;
 load battery.mat;
 load PV_power;
-power_PV = 1.5*power_PV;
+power_PV = 1*power_PV;
 % Parameters of the Building Model
 A  = ssM.A;
 Bu = ssM.Bu;
@@ -61,16 +61,16 @@ PV   = sdpvar(1,N,'full');
 %% Convetional On/Off controller
 
 
-[xt1, yt1, ut1, t1] = simBuild([], 505, @shiftPred, N, 4);
+[xt1, yt1, ut1, t1, cost_grid, cpt] = simBuild([], T, @shiftPred, N, 4);
 
-Total_energy_consumed = sum(sum(ut1))/3; %kwh
+Total_energy_consumed = sum(sum(ut1))/3; %%Total energy consumed [kWh]
 et = double(power_PV(1:505)') - sum(ut1);
-index = find(et>0);
-Injected_grid = sum(et(index))/3;
-index1 = find(et<0);
-Consumed_grid = (-1)*sum(et(index1))/3;
-Self_consumption = Total_energy_consumed - Consumed_grid;
-PV_energy = sum(power_PV(1:505))/3;
-
-
+index = find(et>0); %Indexes of the injected energy to the grid
+Injected_grid = sum(et(index))/3; %Energy injected to the grid
+index1 = find(et<0); %Indexes of the consumed energy from the grid
+Consumed_grid = (-1)*sum(et(index1))/3; %Energy consumed from the grid
+Self_consumption = Total_energy_consumed - Consumed_grid; %Self-consumed energy
+PV_energy = sum(power_PV(1:505))/3; %Energy produced by the PVs
+cost_feed_in = Injected_grid*0.0543; %Feed-in profit
+total_electricity_cost = cost_grid - cost_feed_in; %Total electricity cost
  

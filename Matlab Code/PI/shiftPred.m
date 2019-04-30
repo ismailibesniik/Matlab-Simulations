@@ -16,7 +16,7 @@ load PV_power;
 
 %% Disturbance Prediction
 pred = refDist(:,t:t+N-1);
-PV_pred = 1.5*power_PV';
+PV_pred = 1*power_PV';
 PV_pred = double(PV_pred(:,t:t+N-1));
 %% Variable Price Prediction 
 t_start=mod(t,72);%time step out of a day
