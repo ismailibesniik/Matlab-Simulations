@@ -105,7 +105,7 @@ for i = 1:T
     
     switch mode
         
-        %Time between 22:00 - 04:00
+%------ %Time between 22:00 - 04:00 ---------------------------------------
         case 1
             
             %Building temperature reference
@@ -130,7 +130,7 @@ for i = 1:T
                 uet(:,i) = 4.5;
             end
             
-        %Time between 04:00 - 06:00 
+%------ %Time between 04:00 - 06:00 ---------------------------------------
         case 2
             
             %Building temperature reference
@@ -155,9 +155,18 @@ for i = 1:T
                 uet(:,i) = 4.5;
             end
             
-        %Time between 06:00 - 18:00 
+%------ %Time between 06:00 - 18:00 ---------------------------------------
         case 3
             
+            %Check the PV production
+            if (PV_power > 0)
+                ut(:,i) = [PV_power(i)/3;PV_power(i)/3;PV_power(i)/3];
+                if ( yt(:,i) == [22;22;22])
+                    
+                yref = [22;22;22]; %Celsius degrees
+                xref(:,i+1) = C\yref;
+                ut(:,i) = Bu\(xref(:,i+1) - A*xref(:,i) - Bd*d_pred(:,1));
+            end
             %Building temperature reference
             yref = [22;22;22]; %Celsius degrees
             xref(:,i+1) = C\yref;
@@ -180,7 +189,7 @@ for i = 1:T
                 uet(:,i) = 4.5;
             end
             
-        %Time between 18:00 - 22:00
+%------ %Time between 18:00 - 22:00 ---------------------------------------
         case 4
             
             %Building temperature reference
@@ -214,7 +223,7 @@ for i = 1:T
     xbt(:,i) = xb;
     cpt(:,i) = cp(1,1);
     sbt(:,i) = sb(1,1);
-    yt(:,i)  = C*x;
+    yt(:,i)  = C*xt(:,i);
     t(1,i)   = i;
     Tempt(:,i) = Temp1;
     
