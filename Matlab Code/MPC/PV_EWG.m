@@ -140,11 +140,11 @@ con     = [];
 M       = 10000;
 uemax = 4.5; %kW -> Maximum power of the HP
 uemin = 0; %kW -> Maximum power of the HP
-Tmin = 60; %Celsius Degrees
-Tmax = 80; %Celsius Degrees
+Tmin = 16; %Celsius Degrees
+Tmax = 26; %Celsius Degrees
 
 %EWH parameters
-a = 128.38; %-> [J/min C degrees]
+a1 = 128.38; %-> [J/min C degrees]
 c_w = 4.1813; %-> [J/g C degrees]
 m_w = 196.82; %-> [kg]
 C1 = 8.22*10^5; %-> [J/C degrees]
@@ -152,6 +152,11 @@ Tin = 10; %-> [C degrees]
 Tout = 60; %-> [C degrees]
 Troom = 22; %-> [C degrees]
 Pmax = 4.5; %-> [kW]
+CO = ((1+20*30*a1/(60*2*C1))^(-1));
+CO1= (1-20*30*a1/(60*2*C1));
+CO2= 20*30*a1/(60*C1);
+CO3= 20*30*1/m_w*w_k*(Tout - Tin);
+CO4= 30*20/(C1)*1000;
 %Constraints 
 for i=1:N-1
     con=[con,...
@@ -171,15 +176,15 @@ for i=1:N-1
         p_b(i)    == PV(i) - sum(u(:,i)) - ue(:,i) + p(i) ,... %battery charging rate = pwr from PV - pwr consumption +- pwr from grid 
         p_b(i)    == p_ch(i) + p_dch(i),... %to only charge the battery
         x(:,i+1)  == A*x(:,i) + Bu*u(:,i) + Bd*d(:,i),... %sys evolution
-        SOC(i+1)  == a*SOC(i) + b_ch*p_ch(i)/3 + b_dch*p_dch(i)/3,... %battery state evolution
-        Temp(i+1) == (1+a/(2*C1))^(-1)*((1-a/(2*C1))*Temp(i) + a/C1*Troom - 1/m_w*w_k*(Tout - Tin) + 20/C1*ue(i)*1000)%EWH model
+        SOC(i+1)  == a*SOC(i) + b_ch*p_ch(i)/3 + b_dch*p_dch(i)/3 %battery state evolution
+        Temp(i+1) == CO*(CO1*Temp(i) + CO2*d(1,i) - CO3 + CO4*ue(:,i));%EWH model
         ];   
    con=[con, ymin - eps <= y(:,i+1) <= ymax + eps , eps>=0];%zone temperature constraints
    obj = obj + price(i)*p_plus(i) + eps'*S*eps + (y(:,i+1) - yref)'*R*(y(:,i+1) - yref);
 
 end
 ops = sdpsettings('verbose',1, 'solver', '+gurobi');
-controller5 = optimizer(con,obj,ops,[x(:,1);SOC(1,1);d(:);price(:);sb(:);PV(:);Temp(1,1)],[u;p_b;p;ue]);
+controller5 = optimizer(con,obj,ops,[x(:,1);SOC(1,:);d(:);price(:);sb(:);PV(:);Temp(1,:)],[u;p_b;p;ue]);
 [xt5, yt5, ut5, t5, et, xbt, cost_grid, vt5, cpt5, ue5, Temp5] = simBuildStorage_EWH(controller5, T, @shiftPred, N,w_k);
 %% Calculate the energy self - consumption
 
@@ -220,6 +225,7 @@ ylabel('Power input to the Storage (kW) - PV power');
 figure
 plot(t5,ue5(1,:))
 hold on
-
+legend('Power to EWH')
 figure
-plot(t5,Temp5(:,1))
+plot(t5,Temp5(1,:))
+legend('Temperature evolution of EWH')

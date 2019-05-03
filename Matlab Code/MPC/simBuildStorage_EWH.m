@@ -18,7 +18,7 @@
 % xbt - State of the battery storage as a function of time
 
 
-function [ xt, yt, ut, t, et, xbt, cost, vt, cpt, ue, Temp] = simBuildStorage_EWH(controller, T, fhandle, N, w_k)
+function [ xt, yt, ut, t, et, xbt, cost, vt, cpt, uet, Tempt] = simBuildStorage_EWH(controller, T, fhandle, N, w_k)
 load building.mat;
 load battery.mat;
 load PV_power;
@@ -37,7 +37,7 @@ b_dch= 1.1; % Battery discharging efficiency coeficient
 
 x = x0red;
 xb = 0; %initial battery state of charge
-Temp1 = 50; %initial EWH temperature
+Temp1 = 16; %initial EWH temperature
 
 nx = length(A);
 nu = size(Bu,2);
@@ -50,8 +50,8 @@ yt = zeros(ny,T);
 
 ut = zeros(nu,T);
 t = zeros(1,T);
-Temp = zeros(1,T); %EWH temperature
-ue = zeros(1,T); %EWH input
+Tempt = zeros(1,T); %EWH temperature
+uet = zeros(1,T); %EWH input
 
 et = zeros(1,T);
 xbt = zeros(1,T);
@@ -62,7 +62,7 @@ sbt = zeros(1,T);
 cost = 0;
 
 %EWH parameters
-a = 128.38; %-> [J/min C degrees]
+a1 = 128.38; %-> [J/min C degrees]
 c_w = 4.1813; %-> [J/g C degrees]
 m_w = 196.82; %-> [kg]
 C1 = 8.22*10^5; %-> [J/C degrees]
@@ -77,13 +77,13 @@ for i = 1:T
 
 xt(:,i) = x;
 ut(:,i) = U(1:nu,1);
-ue(:,i) = U(end,1);
+uet(:,i) = U(end,1);
 et(:,i) = U(end-1,1);
 vt(:,i) = U(end-2,1);
 xbt(:,i) = xb;
 cpt(:,i) = cp(1,1);
 sbt(:,i) = sb(1,1);
-Temp(:,i) = Temp1;
+Tempt(:,i) = Temp1;
 yt(:,i) = C*x;
 t(1,i) = i;
 if(et(:,i)>0)
@@ -99,8 +99,8 @@ else
 xb = a*xb + 1/b_dch*vt(:,i)/3;
 end
 
-Temp1 = (1+a/(2*C1))^(-1)*((1-a/(2*C1))*Temp1 + a/C1*Troom - 1/m_w*w_k*(Tout - Tin) + 20/C1*ue(:,i)*1000); %EWH model
-      
+Temp1 = ((1+20*30*a1/(60*2*C1))^(-1))*((1-20*30*a1/(60*2*C1))*Temp1 + 20*30*a1/(60*C1)*d_pred(1,1) - 20*30*1/m_w*w_k*(Tout - Tin) + 30*20/(C1)*uet(:,i)*1000);%EWH model
+
 end
 
 %% Generating the Plots
