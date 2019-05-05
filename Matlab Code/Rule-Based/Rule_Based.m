@@ -10,6 +10,8 @@ clear all
 load building.mat;
 load battery.mat;
 load PV_power;
+load data_meteo_swiss_2018_2019.mat
+meteo = str;
 
 %Increasing the power production to 150%
 PV_power = 1.5*power_PV; 
@@ -42,6 +44,11 @@ t2   = datetime('28-Feb-2019 00:00:00','TimeZone','Europe/Zurich','Format','dd-M
 time = t1:minutes(20):t2;
 T    = size(time,2); %Number of samples
 
+%Find indexes of global irradiation on the above mentioned dates
+index1 = find(contains(str.time,'201902190000'));
+index2 = find(contains(str.time,'201902280000'));
+
+
 xref  = zeros(nx,T); % T is the length of simulation in samples
 xt    = zeros(nx,T);
 yt    = zeros(ny,T);
@@ -68,7 +75,7 @@ Tin   = 10; %-> [C degrees]
 Tout  = 60; %-> [C degrees]
 Pmax  = 4.5; %-> [kW]
 Troom = 22; %-> [C degrees]
-w_k = 0; %Water usage variable
+w_k   = 0; %Water usage variable
 CO = ((1+20*30*a1/(60*2*C1))^(-1));
 CO1= (1-20*30*a1/(60*2*C1));
 CO2= 20*30*a1/(60*C1);
@@ -239,4 +246,5 @@ for i = 1:T
     %EWH model equation
     Tempt(:,i+1) = CO*(CO1*Tempt(:,i) + CO2*d_pred(1,1) - CO3 + CO4*uet(:,i));%EWH model
 
+    end
 end
