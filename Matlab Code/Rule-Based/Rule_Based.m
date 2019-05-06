@@ -51,7 +51,7 @@ T    = size(time,2); %Number of samples
 %Find indexes of global irradiation on the above mentioned dates
 index1 = find(contains(str.time,'201902190000'));
 index2 = find(contains(str.time,'201902280000'));
-glob_irr_val = meteo.glob_irr(index1:index2); %Global irradiation for the given date
+glob_irr_val = str2num(char(meteo.glob_irr(index1:index2))); %Global irradiation for the given date
 glob_irr_coef = 17.13074617; %Global irradiation coefficient to PV prediciton
 PV_pred_ann = glob_irr_coef*glob_irr_val; %Predicted PV production by ANN
 
@@ -88,9 +88,9 @@ CO2= 20*30*a1/(60*C1);
 CO3= 20*30*1/m_w*w_k*(Tout - Tin);
 CO4= 30*20/(C1)*1000;
 
-p(i) = zeros(1,T);
-feed_in(i) = zeros(1,T);
-grid_cons(i) = zeros(1,T);
+p = zeros(1,T);
+feed_in = zeros(1,T);
+grid_cons = zeros(1,T);
 %% The main loop running the algorithm
 for i = 1:T
 
