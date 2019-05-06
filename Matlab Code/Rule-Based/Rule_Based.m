@@ -11,10 +11,14 @@ load building.mat;
 load battery.mat;
 load PV_power;
 load data_meteo_swiss_2018_2019.mat
-meteo = str;
+meteo = str;                      % Create Column
+time_string = num2str(cell2mat(meteo.time));
+time_string = [str2num(time_string(:,1:4)),str2num(time_string(:,5:6)), str2num(time_string(:,7:8)), str2num(time_string(:,9:10)), str2num(time_string(:,11:12))];
+time_string(:,6) = 0;
+meteo.datetime = datetime(time_string);
 
 %Increasing the power production to 150%
-PV_power = 1.5*power_PV; 
+PV_power = 2*power_PV; 
 
 % Parameters of the Building Model
 A  = ssM.A;
@@ -47,7 +51,9 @@ T    = size(time,2); %Number of samples
 %Find indexes of global irradiation on the above mentioned dates
 index1 = find(contains(str.time,'201902190000'));
 index2 = find(contains(str.time,'201902280000'));
-
+glob_irr_val = meteo.glob_irr(index1:index2); %Global irradiation for the given date
+glob_irr_coef = 17.13074617; %Global irradiation coefficient to PV prediciton
+PV_pred_ann = glob_irr_coef*glob_irr_val; %Predicted PV production by ANN
 
 xref  = zeros(nx,T); % T is the length of simulation in samples
 xt    = zeros(nx,T);
@@ -81,6 +87,10 @@ CO1= (1-20*30*a1/(60*2*C1));
 CO2= 20*30*a1/(60*C1);
 CO3= 20*30*1/m_w*w_k*(Tout - Tin);
 CO4= 30*20/(C1)*1000;
+
+p(i) = zeros(1,T);
+feed_in(i) = zeros(1,T);
+grid_cons(i) = zeros(1,T);
 %% The main loop running the algorithm
 for i = 1:T
 
@@ -119,81 +129,57 @@ for i = 1:T
             yref = [18;18;18]; %Celsius degrees -> Reference to MIN
             xref(:,i+1) = C\yref;
             ut(:,i) = Bu\(xref(:,i+1) - A*xref(:,i) - Bd*d_pred(:,1));
-            %Limits on the input
-            if (ut(:,i) < 0)
-                ut(:,i) = 0;
-            elseif(ut(:,i) > 15)
-                ut(:,i) = 15;
-            end
             
             %EWH temperature reference
             Tref(:,i+1) = 18; % Celsius degrees -> Reference to MIN
             Tref(:,i+1) = CO*(CO1*Tref(:,i) + CO2*d_pred(1,1) - CO3 + CO4*uet(:,i));%EWH model
             uet(:,i) = (Tref(:,i+1)/CO - CO1*Tref(:,i) - CO2*d_pred(1,1) - CO3)/CO4;
-           %Limits on the input
-            if (uet(:,i) < 0)
-                uet(:,i) = 0;
-            elseif(uet(:,i) > 4.5)
-                uet(:,i) = 4.5;
-            end
             
 %------ %Time between 04:00 - 06:00 ---------------------------------------
         case 2
             
             %Building temperature reference
-            yref = [22;22;22]; %Celsius degrees -> Reference to MAX
+            yref = [24;24;24]; %Celsius degrees -> Reference to MAX
             xref(:,i+1) = C\yref;
-            ut(:,i) = Bu\(xref(:,i+1) - A*xref(:,i) - Bd*d_pred(:,1));
-            %Limits on the input
-            if (ut(:,i) < 0)
-                ut(:,i) = 0;
-            elseif(ut(:,i) > 15)
-                ut(:,i) = 15;
-            end
+            ut(:,i) = Bu\(xref(:,i+1) - A*xref(:,i) - Bd*d_pred(:,1));          
             
             %EWH temperature reference
-            Tref(:,i+1) = 22; % Celsius degrees -> Reference to MAX
+            Tref(:,i+1) = 24; % Celsius degrees -> Reference to MAX
             Tref(:,i+1) = CO*(CO1*Tref(:,i) + CO2*d_pred(1,1) - CO3 + CO4*uet(:,i));%EWH model
             uet(:,i) = (Tref(:,i+1)/CO - CO1*Tref(:,i) - CO2*d_pred(1,1) - CO3)/CO4;
-            %Limits on the input
-            if (uet(:,i) < 0)
-                uet(:,i) = 0;
-            elseif(uet(:,i) > 4.5)
-                uet(:,i) = 4.5;
-            end
-            
+                  
 %------ %Time between 06:00 - 18:00 ---------------------------------------
         case 3
             
-            %Check the PV production
-            if (PV_power > 0)
-                ut(:,i) = [PV_power(i)/3;PV_power(i)/3;PV_power(i)/3];
-                if ( yt(:,i) == [22;22;22])
-                    
-                yref = [22;22;22]; %Celsius degrees
-                xref(:,i+1) = C\yref;
-                ut(:,i) = Bu\(xref(:,i+1) - A*xref(:,i) - Bd*d_pred(:,1));
-            end
-            %Building temperature reference
-            yref = [22;22;22]; %Celsius degrees
+            %Check the PV energy production forecast for the next 20 min
+            index = find(time(i) == meteo.time);
+            Energy_PV_forecast = sum(PV_pred_ann(index:index+1,2))/2/3;
+            
+            %Devide the energy equally to the three zones  
+            ut(:,i) = [Energy_PV_forecast;Energy_PV_forecast;Energy_PV_forecast];   
+            %Checking if it will pass the maximum
+            yref = [24;24;24]; %Celsius degrees
             xref(:,i+1) = C\yref;
-            ut(:,i) = Bu\(xref(:,i+1) - A*xref(:,i) - Bd*d_pred(:,1));
-            %Limits on the input
-            if (ut(:,i) < 0)
-                ut(:,i) = 0;
-            elseif(ut(:,i) > 15)
-                ut(:,i) = 15;
+            uref(:,i) = Bu\(xref(:,i+1) - A*xref(:,i) - Bd*d_pred(:,1));
+                
+            exceed_b = find(ut(:,i)>=uref(:,i));
+                
+            if(sum(exceed_b,2) ~= 0)
+                    ut(exceed_b,i) = uref(exceed_b,i);  
+            end
+            
+            if(sum(ut(:,i),2) < Energy_PV_forecast)    
+                uet(:,i) = sum(ut(:,i),2) - Energy_PV_forecast;
             end
             
             %EWH temperature reference
             Tref(:,i+1) = 22; % Celsius degrees 
-            Tref(:,i+1) = CO*(CO1*Tref(:,i) + CO2*d_pred(1,1) - CO3 + CO4*uet(:,i));%EWH model
-            uet(:,i) = (Tref(:,i+1)/CO - CO1*Tref(:,i) - CO2*d_pred(1,1) - CO3)/CO4;
-            %Limits on the input
-            if (uet(:,i) < 0)
-                uet(:,i) = 0;
-            elseif(uet(:,i) > 4.5)
-                uet(:,i) = 4.5;
+            ueref(:,i) = (Tref(:,i+1)/CO - CO1*Tref(:,i) - CO2*d_pred(1,1) - CO3)/CO4;
+            
+            exceed_w = uet(:,i)>=ueref(:,i);
+                
+            if(exceed_w ~= 0)
+                    uet(:,i) = ueref(:,i);  
             end
             
 %------ %Time between 18:00 - 22:00 ---------------------------------------
@@ -203,48 +189,49 @@ for i = 1:T
             yref = [18;18;18]; %Celsius degrees
             xref(:,i+1) = C\yref;
             ut(:,i) = Bu\(xref(:,i+1) - A*xref(:,i) - Bd*d_pred(:,1));
-            %Limits on the input
-            if (ut(:,i) < 0)
-                ut(:,i) = 0;
-            elseif(ut(:,i) > 15)
-                ut(:,i) = 15;
-            end
             
             %EWH temperature reference
             Tref(:,i+1) = 18; % Celsius degrees 
             Tref(:,i+1) = CO*(CO1*Tref(:,i) + CO2*d_pred(1,1) - CO3 + CO4*uet(:,i));%EWH model
             uet(:,i) = (Tref(:,i+1)/CO - CO1*Tref(:,i) - CO2*d_pred(1,1) - CO3)/CO4;
-            %Limits on the input
-            if (uet(:,i) < 0)
-                uet(:,i) = 0;
-            elseif(uet(:,i) > 4.5)
-                uet(:,i) = 4.5;
-            end
             
     end
     
+     %Limits on the input HP
+     if (ut(:,i) < 0)
+        ut(:,i) = 0;
+     elseif(ut(:,i) > 15)
+        ut(:,i) = 15;
+     end
+     
+     %Limits on the input
+     if (uet(:,i) < 0)
+        uet(:,i) = 0;
+     elseif(uet(:,i) > 4.5)
+        uet(:,i) = 4.5;
+     end
+     
     %Logging the data
-    uet(:,i) = U(end,1);
-    et(:,i)  = U(end-1,1);
-    vt(:,i)  = U(end-2,1);
-    xbt(:,i) = xb;
+    p(i) = PV_pred(i) - sum(ut(:,i),2) - uet(:,i);
+    
+    if(p(i)>0)
+    feed_in(i) = p(i);
+    else
+    grid_cons(i) = (-1)*p(i);
+    end
+    
     cpt(:,i) = cp(1,1);
-    sbt(:,i) = sb(1,1);
     yt(:,i)  = C*xt(:,i);
     t(1,i)   = i;
     Tempt(:,i) = Temp1;
     
     disp(['Iteration ' int2str(i)]);
     yalmiperror(id);
-    xt(:,i+1) = A*xt(:,i) + Bu*ut(:,i) + Bd*d_pred(:,1); %Building model equation
-    if(vt(:,i)>0)
-    xb = a*xb + b_ch*vt(:,i)/3; %Battery model equation
-    else
-    xb = a*xb + 1/b_dch*vt(:,i)/3; %Battery model equation
-    end
+    
+    %Building model equation
+    xt(:,i+1) = A*xt(:,i) + Bu*ut(:,i) + Bd*d_pred(:,1); 
     
     %EWH model equation
-    Tempt(:,i+1) = CO*(CO1*Tempt(:,i) + CO2*d_pred(1,1) - CO3 + CO4*uet(:,i));%EWH model
+    Tempt(:,i+1) = CO*(CO1*Tempt(:,i) + CO2*d_pred(1,1) - CO3 + CO4*uet(:,i));
 
-    end
 end
