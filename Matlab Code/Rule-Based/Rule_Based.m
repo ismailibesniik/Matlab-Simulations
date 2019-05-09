@@ -48,13 +48,13 @@ time = t1:minutes(20):t2;
 T    = 505; %Number of samples
 
 %Find indexes of global irradiation on the above mentioned dates
-% index1 = find(contains(str.time,'201902190000'));
-% index2 = find(contains(str.time,'201902280000'));
-glob_irr_val = str2num(char(meteo.glob_irr)); %Global irradiation for the given date
+index1 = find(contains(str.time,'201902190000'));
+index2 = find(contains(str.time,'201902280000'));
+glob_irr_val = str2num(char(meteo.glob_irr(index1:index2))); %Global irradiation for the given date
 glob_irr_coef = 17.13074617; %Global irradiation coefficient to PV prediciton
 PV_pred_ann = glob_irr_coef*glob_irr_val; %Predicted PV production by ANN
 
-xref  = zeros(nx,T); % T is the length of simulation in samples
+
 xt    = zeros(nx,T);
 yt    = zeros(ny,T);
 ut    = zeros(nu,T);
@@ -87,10 +87,13 @@ CO1= (1-20*30*a1/(60*2*C1));
 CO2= 20*30*a1/(60*C1);
 CO3= 20*30*1/m_w*w_k*(Tout - Tin);
 CO4= 30*20/(C1)*1000;
-
-p = sdpvar(1,T,'full');
-feed_in = sdpvar(1,T,'full');
-grid_cons = sdpvar(1,T,'full');
+integral = [0;0;0];
+error = 0;
+umax = 15; %kW
+umin = 0;  %kW
+% p = sdpvar(1,T,'full');
+% feed_in = sdpvar(1,T,'full');
+% grid_cons = sdpvar(1,T,'full');
 %% The main loop running the algorithm
 for i = 1:72
 
@@ -127,7 +130,9 @@ for i = 1:72
             
             %Building temperature reference
             yref = [18;18;18]; %Celsius degrees -> Reference to MIN
-      
+            error = yref - yt(:,i);
+            [U,integral1] = PI(error,integral,umin,umax); 
+            ut(:,i) = U(1:nu,1);
             %EWH temperature reference
             Tref(:,i+1) = 18; % Celsius degrees -> Reference to MIN
             
@@ -136,13 +141,16 @@ for i = 1:72
             
             %Building temperature reference
             yref = [24;24;24]; %Celsius degrees -> Reference to MAX         
-            
+            error = yref - yt(:,i);
+            [U,integral1] = PI(error,integral,umin,umax); 
+            ut(:,i) = U(1:nu,1);
             %EWH temperature reference
             Tref(:,i+1) = 24; % Celsius degrees -> Reference to MAX
                   
 %------ %Time between 06:00 - 18:00 ---------------------------------------
         case 3
             
+            yref = [24;24;24];
             %Check the PV energy production forecast for the next 20 min
             index = find(time(i) == meteo.datetime);
             Energy_PV_forecast = sum(PV_pred_ann(index:index+1,1))/2/3;
@@ -151,19 +159,20 @@ for i = 1:72
             ut(:,i) = [Energy_PV_forecast;Energy_PV_forecast;Energy_PV_forecast];   
             
             %Checking if it will pass the maximum allowed room temperature
-            yref = [24;24;24]; 
-            xref(:,i+1) = C\yref;
-            uref(:,i) = Bu\(xref(:,i+1) - A*xt(:,i) - Bd*d_pred(:,2));
-                
-            exceed_b = find(ut(:,i)>=uref(:,i));
-                
-            if(sum(sum(exceed_b)) ~= 0)
-                    ut(exceed_b,i) = uref(exceed_b,i);  
-            end
+            xt_check = A*xt(:,i) + Bu*ut(:,i) + Bd*d_pred(:,1); 
+            yt_check = C*xt_check;
             
-            if(sum(sum(ut(:,i))) < Energy_PV_forecast)    
-                uet(:,i) = sum(ut(:,i),1) - Energy_PV_forecast;
-            end
+            exceed_b = find(yt_check>=yref);
+            error = yref(exceed_b) - yt(:,i);
+            [U,integral1] = PI(error,integral,umin,umax); 
+            ut(:,i) = U(1:nu,1);
+%             if(sum(sum(exceed_b)) ~= 0)
+%                     ut(exceed_b,i) = uref(exceed_b,i);  
+%             end
+            
+%             if(sum(sum(ut(:,i))) < Energy_PV_forecast)    
+%                 uet(:,i) = sum(ut(:,i),1) - Energy_PV_forecast;
+%             end
             
             %EWH temperature reference
             Tref(:,i+1) = 22; % Celsius degrees 
@@ -180,38 +189,42 @@ for i = 1:72
             
             %Building temperature reference
             yref = [18;18;18]; %Celsius degrees
-            
+            error = yref - yt(:,i);
+            [U,integral1] = PI(error,integral,umin,umax); 
+            ut(:,i) = U(1:nu,1);
             %EWH temperature reference
             Tref(:,i+1) = 18; % Celsius degrees 
             
     end
     
-    if(mode == 1||mode == 2||mode==4)
-    %Calculating the input to trach the reference -> HP
-    xref(:,i) = C\yref;
-    ut(:,i) = Bu\(xref(:,i) - A*xt(:,i) - Bd*d_pred(:,1));
-    
+%     if(mode == 1||mode == 2||mode==4)
+%     %Calculating the input to trach the reference -> HP
+%     xref(:,i) = C\yref;
+%     ut(:,i) = Bu\(xref(:,i) - A*xt(:,i) - Bd*d_pred(:,1));
+%     
     %Calculating the input to trach the reference -> EWH
     Tref(:,i+1) = CO*(CO1*Tref(:,i) + CO2*d_pred(1,1) - CO3 + CO4*uet(:,i));%EWH model
     uet(:,i) = (Tref(:,i+1)/CO - CO1*Tempt(:,i) - CO2*d_pred(1,2) - CO3)/CO4;
-    end
+% end
     
     %Limits on the input HP
-    index11 = find(ut(:,i) < 0);
-    index22 = find(ut(:,i) > 15);
-    if (sum(sum(index11)))
-       ut(index11,i) = 0;
-    elseif(sum(sum(index22)))
-       ut(index22,i) = 15;
-    end
-     
+%     index11 = find(ut(:,i) < 0);
+%     index22 = find(ut(:,i) > 15);
+%     if (sum(sum(index11)))
+%        ut(index11,i) = 0;
+%     elseif(sum(sum(index22)))
+%        ut(index22,i) = 15;
+%     end
+%      
     %Limits on the input EWH
     if (uet(:,i) < 0)
        uet(:,i) = 0;
     elseif(uet(:,i) > 4.5)
        uet(:,i) = 4.5;
     end
-     
+    
+    integral = integral1;
+    
     %Energy exchanged with the grid
     p(i) = PV_pred(:,i) - sum(ut(:,i),1) - uet(:,i);
     
@@ -239,3 +252,12 @@ figure
 % subplot(2,3,1)
 plot(t, yt(1,:))
 hold on
+
+xref = C\yref;
+ut1 = Bu\(xref - A*x0red - Bd*d_pred(:,1));
+ut2 = (xref - A*x0red - Bd*d_pred(:,1));
+xt1 = A*x0red + Bu*ut1 + Bd*d_pred(:,1);
+xt2 = A*x0red + ut2+ Bd*d_pred(:,1);
+yt1=C*xt1
+yt2=C*xt2
+
