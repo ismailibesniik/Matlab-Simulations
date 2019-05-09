@@ -127,7 +127,7 @@ for i = 1:72
             Energy_PV_forecast = sum(PV_pred_ann(index:index+1,1))/2/3;
             
             %Devide the energy equally to the three zones  
-            u_fore = [Energy_PV_forecast;Energy_PV_forecast;Energy_PV_forecast];   
+            u_fore = [Energy_PV_forecast;Energy_PV_forecast;Energy_PV_forecast]./3;   
            
             %Checking if it will pass the maximum allowed room temperature 
             xref = C\ymax;
@@ -139,16 +139,9 @@ for i = 1:72
             exceed_tem = find(y_check>=ymax);
             
             if(sum(sum(exceed_tem)) ~= 0)
-                    uref = Bu\(xref - A*xt(:,i) - Bd*d_pred(:,2));
+                    uref = Bu\(xref - A*xt(:,i) - Bd*d_pred(:,i));
                     ut(exceed_tem,i) = uref(exceed_tem);  
             end
-            
-%             %Checking if it will pass the maximum allowed input
-%             exceed_b = find(ut(:,i)>=umax);
-%                 
-%             if(sum(sum(exceed_b)) ~= 0)
-%                     ut(exceed_b,i) = umax(exceed_b);  
-%             end
             
 %------ %Time between 18:00 - 22:00 ---------------------------------------
         case 4
@@ -161,8 +154,7 @@ for i = 1:72
     if(mode == 1||mode == 2||mode==4)
     %Calculating the input to track the reference -> HP
     xref = C\yref;
-    Bu_u(:,i) = (xref - A*xt(:,i) - Bd*d_pred(:,1));
-    ut(:,i) = Bu\Bu_u(:,i);
+    ut(:,i) = Bu\(xref - A*xt(:,i) - Bd*d_pred(:,1));
     end
     
      %Limits on the input HP
