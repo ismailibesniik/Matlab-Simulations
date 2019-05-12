@@ -45,7 +45,7 @@ ny = size(C,1);
 t1   = datetime('19-Feb-2019 00:00:00','TimeZone','Europe/Zurich','Format','dd-MMM-yyyy HH:mm:ss');
 t2   = datetime('28-Feb-2019 00:00:00','TimeZone','Europe/Zurich','Format','dd-MMM-yyyy HH:mm:ss');
 time = t1:minutes(20):t2;
-T    = 505; %Number of samples
+T    = 72;%505; %Number of samples
 
 %Find indexes of global irradiation on the above mentioned dates
 index1 = find(contains(str.time,'201902190000'));
@@ -73,11 +73,11 @@ cost = 0;
 xt(:,1) = x0red; %Initial state values
 
 ymax = [24;24;24];
-ymin = [24;24;24];
+ymin = [18;18;18];
 umax    = [15;15;15]; %kW -> Maximum power of the HP
 umin    = [0;0;0];  %kW -> Minimum power of the HP
 %% The main loop running the algorithm
-for i = 1:72
+for i = 1:T
 
     [~, cp, sb, ~] = shiftPred(i, N);
     d_pred = refDist;
@@ -117,7 +117,7 @@ for i = 1:72
         case 2
             
             %Building temperature reference
-            yref = [24;24;24]; %Celsius degrees -> Reference to MAX         
+            yref = ymax; %Celsius degrees -> Reference to MAX         
             
 %------ %Time between 06:00 - 18:00 ---------------------------------------
         case 3
@@ -136,12 +136,47 @@ for i = 1:72
             
             ut(:,i) = u_fore;
             
-            exceed_tem = find(y_check>=ymax);
-            
-            if(sum(sum(exceed_tem)) ~= 0)
-                    uref = Bu\(xref - A*xt(:,i) - Bd*d_pred(:,i));
-                    ut(exceed_tem,i) = uref(exceed_tem);  
+            exceed_max = find(y_check>=ymax);
+            ex_max_neg = find(y_check<=ymax);
+            exceed_min = find(y_check<=ymin);
+            ex_min_neg = find(y_check<=ymin);
+            if(sum(sum(exceed_max)) ~= 0)
+                
+                  x1 = xt(:,i);
+                  y = sdpvar(3,1,'full');
+                  u = sdpvar(3,1,'full');
+                  x = sdpvar(10,1,'full');
+                  d = d_pred(:,i);
+                  
+                  obj = (y - ymax)'*1*(y - ymax);
+                  con = [x == A*x1 + Bu*u + Bd*d,...
+                         y == C*x,...
+                  u(ex_max_neg,1) == u_fore(ex_max_neg,1)
+                  [0;0;0] <= u <= [15;15;15]];
+                  ops = sdpsettings('verbose',0);
+                  optimize(con,obj,ops);
+                  ut(:,i) = value(u);
             end
+            
+            if(sum(sum(exceed_min)) ~= 0)
+                
+                  x1 = xt(:,i);
+                  y = sdpvar(3,1,'full');
+                  u = sdpvar(3,1,'full');
+                  x = sdpvar(10,1,'full');
+                  d = d_pred(:,i);
+                  
+                  obj = (y - ymin)'*1*(y - ymin);
+                  con = [x == A*x1 + Bu*u + Bd*d,...
+                         y == C*x,...
+                  u(ex_min_neg,1) == u_fore(ex_min_neg,1)
+                  [0;0;0] <= u <= [15;15;15]];
+                  ops = sdpsettings('verbose',0);
+                  optimize(con,obj,ops);
+                  ut(:,i) = value(u);
+            end
+            
+            
             
 %------ %Time between 18:00 - 22:00 ---------------------------------------
         case 4
@@ -152,11 +187,22 @@ for i = 1:72
     end
     
     if(mode == 1||mode == 2||mode==4)
+        x1 = xt(:,i);
+        y = sdpvar(3,1,'full');
+        u = sdpvar(3,1,'full');
+        x = sdpvar(10,1,'full');
+        d = d_pred(:,i);
     %Calculating the input to track the reference -> HP
-    xref = C\yref;
-    ut(:,i) = Bu\(xref - A*xt(:,i) - Bd*d_pred(:,1));
+    obj = (y - yref)'*1*(y - yref);
+    con = [x == A*x1 + Bu*u + Bd*d,...
+           y == C*x,...
+           [0;0;0] <= u <= [15;15;15]];
+    ops = sdpsettings('verbose',0);
+    optimize(con,obj,ops);
+    ut(:,i) = value(u);
     end
     
+    if ( mode == 3)
      %Limits on the input HP
     index11 = find(ut(:,i) < 0);
     index22 = find(ut(:,i) > 15);
@@ -164,6 +210,7 @@ for i = 1:72
        ut(index11,i) = 0;
     elseif(sum(sum(index22)))
        ut(index22,i) = 15;
+    end
     end
     
     xt(:,i+1) = A*xt(:,i) + Bu*ut(:,i) + Bd*d_pred(:,i); 
@@ -189,12 +236,4 @@ figure
 % subplot(2,3,1)
 plot(t, yt(:,:))
 hold on
-
-xref = C\yref;
-ut1 = Bu\(xref - A*x0red - Bd*d_pred(:,1));
-ut2 = (xref - A*x0red - Bd*d_pred(:,1));
-xt1 = A*x0red + Bu*ut1 + Bd*d_pred(:,1);
-xt2 = A*x0red + ut2+ Bd*d_pred(:,1);
-yt1=C*xt1;
-yt2=C*xt2;
 
