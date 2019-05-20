@@ -1,58 +1,8 @@
 %% MPC Building Control
 %Puprose: Master Thesis Project
 %Author: Besnik Ismaili
-
-% clc;
-% close all;
-% yalmip('clear')
-% clear all
-% %% Model data
-% load building.mat;
-% load battery.mat;
-% load PV_power;
-% load results
-% 
-% Npvs = 15; % - the number of PV modules in series
-% Npvp = 6;% - the number of PV modules in paralel
-% NOCT = 45.5; %-> [1/C degrees] - the nominal operating cell temperatur
-% gamma = 0.00043;%-> [1/C degrees] - the power temperature coefficient at the maximum power point (MPP)
-% Pv_stc = 165; %-> [W] - the power output of a PV-module under standard test conditions(STC)
-% I_stc = 1000; %-> [W/m^2] - the irradiation at STC (Standard Testing Conditions)
-% Tj_stc = 25; %-> [C degrees] - the cell temperature at STC
-% I_noct = 800; %-> [W/m^2] - the irradiation at nominal operating temperature
-% T_amb_NOCT = 20; %-> [C degrees] 
-% %Pv(t) - total power output at time t of all the PV-modules.
-% %I - the current global irradiation on the sloped surface of the modules. - the power temperature coefficient at the maximum power point (MPP)
-% %Tamb(t) - the outside temperature.
-% date = results.data(1).timestamp_local;
-% results.data(1).timestamp_local
-% I = zeros(49,1);
-% T_amb = zeros(49,1);
-% Tj = zeros(49,1);
-% Pv = zeros(49,1);
-% 
-% for t = 1:1:49
-% I(t) = results.data(t).solar_rad;
-% T_amb(t)  = results.data(t).temp;
-% %PV modeling 
-% Tj(t) = T_amb(t) + I(t)/I_noct*(NOCT - T_amb_NOCT);
-% Pv(t) = Pv_stc*I(t)/I_stc*(1-gamma*(Tj(t) - Tj_stc))*Npvs*Npvp;
-% end
-% 
-% t1 = datetime('15-Apr-2019 10:00:00','TimeZone','Europe/Zurich','Format','dd-MMM-yyyy HH:mm:ss');
-% t2 = datetime('17-Apr-2019 10:00:00','TimeZone','Europe/Zurich','Format','dd-MMM-yyyy HH:mm:ss');
-% time = t1:hours(1):t2;
-% 
-% figure;
-% plot(time, Pv);
-% hold on
-% plot(time,I);
-% hold on
-% plot(time,T_amb)
-%% MPC Building Control
-%Puprose: Master Thesis Project
-%Author: Besnik Ismaili
-%MPC with an Electrical Water Heater in the system.
+%MPC with PV included, Normal battery, EWH, Reference tracking
+%Without night setbacks!
 
 clc;
 close all;
@@ -62,7 +12,7 @@ clear all
 load building.mat;
 load battery.mat;
 load PV_power;
-
+load EWH_parameters;
 %Increasing the power production to 150%
 PV_power = 1.5*power_PV; 
 
@@ -93,8 +43,8 @@ xlabel('samples (20min)')
 %% Controller Design (Setting-up MPC optimizer) 
 N    = 72; %horizon length 72*20/60 = 24[hours]
 T    = 576-N+1; %Simulation time
-yref = [22 22 22]'; % -> Reference temperature in all the zones
-R    = 10;
+yref = [22 22 22]'; % Reference temperature in all the zones
+R    = 10; % The weight on the reference temperature tracking
 nx   = size(A,1);
 nu   = size(Bu,2);
 ny   = size(C,1);
@@ -121,10 +71,6 @@ eps     = sdpvar(3,1,'full'); %Single epsilon for all horizon steps
 s       = sdpvar(N,1,'full'); %Surplus variable
 s_ch    = sdpvar(N,1,'full'); %Surplus variable
 Temp    = sdpvar(N,1,'full'); %EWH temperature
-% w_k     = rand(N,1);
-% w_k     = repmat(w_k,8,1);
-w_k = 0; % Representing the water usage. For now the hot water is not used. We only heat the Water Tank.
-
 %Limits
 umax    = 15; %kW -> Maximum power of the HP
 umin    = 0;  %kW -> Minimum power of the HP
@@ -138,26 +84,18 @@ S       = 100000; %Penalty on constraint violation
 obj     = 0;
 con     = [];
 M       = 10000;
-uemax = 4.5; %kW -> Maximum power of the HP
-uemin = 0; %kW -> Maximum power of the HP
+uemax = 4.5; %kW -> Maximum power of the EWH
+uemin = 0; %kW -> Maximum power of the EWH
 Tmin = 16; %Celsius Degrees
 Tmax = 26; %Celsius Degrees
-
 %EWH parameters
-a1 = 128.38; %-> [J/min C degrees]
-c_w = 4.1813; %-> [J/g C degrees]
-m_w = 196.82; %-> [kg]
-C1 = 8.22*10^5; %-> [J/C degrees]
-Tin = 10; %-> [C degrees]
-Tout = 60; %-> [C degrees]
-Troom = 22; %-> [C degrees]
-Pmax = 4.5; %-> [kW]
-CO = ((1+20*30*a1/(60*2*C1))^(-1));
-CO1= (1-20*30*a1/(60*2*C1));
-CO2= 20*30*a1/(60*C1);
-CO3= 20*30*1/m_w*w_k*(Tout - Tin);
-CO4= 30*20/(C1)*1000;
-%Constraints 
+% w_k     = rand(N,1);
+% w_k     = repmat(w_k,8,1);
+w_k = 0; % Representing the water usage. For now the hot water is not used. We only heat the Water Tank.
+Tout = 60; %Temperature of the water going out of the Storage
+Tin = 20; %Temperature of the water going in the Storage
+
+%% Constraints 
 for i=1:N-1
     con=[con,...
                umin        <=  u(:,i)  <= umax,... %Zone power input constraints
@@ -169,15 +107,15 @@ for i=1:N-1
         p_bmin*(1-s_ch(i)) <=  p_dch(i)  <= 0,... 
                  0         <=      s(i)  <= 1,...
                  0         <=   s_ch(i)  <= 1,...  
-               uemin       <=   ue(:,i)  <= uemax,...
-               Tmin        <=  Temp(i+1) <= Tmax,...
+               uemin       <=   ue(:,i)  <= uemax,... %EWH power input limits
+               Tmin        <=  Temp(i+1) <= Tmax,... % EWH temperature limits
         p(i)      == p_plus(i) + p_minus(i),...   %power injected or consumed from the grid
         y(:,i+1)  == C*x(:,i+1),... %measured room temperatures
         p_b(i)    == PV(i) - sum(u(:,i)) - ue(:,i) + p(i) ,... %battery charging rate = pwr from PV - pwr consumption +- pwr from grid 
         p_b(i)    == p_ch(i) + p_dch(i),... %to only charge the battery
         x(:,i+1)  == A*x(:,i) + Bu*u(:,i) + Bd*d(:,i),... %sys evolution
         SOC(i+1)  == a*SOC(i) + b_ch*p_ch(i)/3 + b_dch*p_dch(i)/3 %battery state evolution
-        Temp(i+1) == CO*(CO1*Temp(i) + CO2*d(1,i) - CO3 + CO4*ue(:,i));%EWH model
+        Temp(i+1) == CO*(CO1*Temp(i) + CO2*d(1,i) - CO3*w_k*(Tout - Tin) + CO4*ue(:,i));%EWH model
         ];   
    con=[con, ymin - eps <= y(:,i+1) <= ymax + eps , eps>=0];%zone temperature constraints
    obj = obj + price(i)*p_plus(i) + eps'*S*eps + (y(:,i+1) - yref)'*R*(y(:,i+1) - yref);

@@ -10,15 +10,17 @@ clear all
 load building.mat;
 load battery.mat;
 load PV_power;
-load data_meteo_swiss_2018_2019.mat
-meteo = str;                      % Create Column
+load data_meteo_swiss_2018_2019.mat;
+load EWH_parameters.mat;
+meteo = str; % Create Column
+%Converting the time on the structure of the data from meteo_swiss to datetime format
 time_string = num2str(cell2mat(meteo.time));
 time_string = [str2num(time_string(:,1:4)),str2num(time_string(:,5:6)), str2num(time_string(:,7:8)), str2num(time_string(:,9:10)), str2num(time_string(:,11:12))];
 time_string(:,6) = 0;
 meteo.datetime = datetime(time_string,'TimeZone','Europe/Zurich','Format','dd-MMM-yyyy HH:mm:ss');
 
 %Increasing the power production to 150%
-PV_pred = 5*power_PV';
+PV_pred = power_PV';
 PV_pred = double(PV_pred);
 
 % Parameters of the Building Model
@@ -59,23 +61,30 @@ xt    = zeros(nx,T);
 yt    = zeros(ny,T);
 ut    = zeros(nu,T);
 t     = zeros(1,T);
+SOC   = zeros(1,T);
 Tempt = zeros(1,T); %EWH temperature
 Tref  = zeros(1,T); %EWH temperature reference
 uet   = zeros(1,T); %EWH input
 
 et  = zeros(1,T);
 xbt = zeros(1,T);
-vt  = zeros(1,T);
+p_ch= zeros(1,T);
 
 cpt  = zeros(1,T);
 sbt  = zeros(1,T);
 cost = 0;
 xt(:,1) = x0red; %Initial state values
-
+Tempt(1,1) = 50;
+Tref(1,1) = 50;
 ymax = [24;24;24];
 ymin = [18;18;18];
-umax    = [15;15;15]; %kW -> Maximum power of the HP
-umin    = [0;0;0];  %kW -> Minimum power of the HP
+umax = [15;15;15]; %kW -> Maximum power of the HP
+umin = [0;0;0];  %kW -> Minimum power of the HP
+Tmin = 50;
+Tmax = 70;
+uetmax = 9;
+uetmin = 0;
+SOC(1) = 0;
 %% The main loop running the algorithm
 for i = 1:T
 
@@ -112,13 +121,13 @@ for i = 1:T
             
             %Building temperature reference
             yref = ymin; %Celsius degrees -> Reference to MIN
-     
+            Tref = Tmin;
 %------ %Time between 04:00 - 06:00 ---------------------------------------
         case 2
             
             %Building temperature reference
             yref = ymax; %Celsius degrees -> Reference to MAX         
-            
+            Tref = Tmax; 
 %------ %Time between 06:00 - 18:00 ---------------------------------------
         case 3
             
@@ -152,7 +161,7 @@ for i = 1:T
                   con = [x == A*x1 + Bu*u + Bd*d,...
                          y == C*x,...
                   u(ex_max_neg,1) == u_fore(ex_max_neg,1)
-                  [0;0;0] <= u <= [15;15;15]];
+                  umin <= u <= umax];
                   ops = sdpsettings('verbose',0);
                   optimize(con,obj,ops);
                   ut(:,i) = value(u);
@@ -176,14 +185,35 @@ for i = 1:T
                   ut(:,i) = value(u);
             end
             
+            %Power left for the EWH
+            if(sum(sum(ut(:,i))) < Energy_PV_forecast)    
+                 uet(:,i) =  Energy_PV_forecast - sum(ut(:,i),1);
+            end
             
+            Tref(:,i+1) = 70; % Celsius degrees 
+            ueref = (Tref(:,i+1)/CO - CO1*Tempt(:,i) - CO2*Troom + CO3)/CO4;
+            
+            ex_w_max = uet(:,i)>=ueref;
+                
+            if(ex_w_max ~= 0)
+                uet(:,i) = ueref;  
+            end
+            
+            Tref(:,i+1) = 50; % Celsius degrees 
+            ueref = (Tref(:,i+1)/CO - CO1*Tempt(:,i) - CO2*Troom + CO3)/CO4;
+            
+            ex_w_min = uet(:,i)<=ueref;
+                
+            if(ex_w_min ~= 0)
+                uet(:,i) = ueref;  
+            end
             
 %------ %Time between 18:00 - 22:00 ---------------------------------------
         case 4
             
             %Building temperature reference
             yref = ymin; %Celsius degrees
-            
+            Tref = Tmin;
     end
     
     if(mode == 1||mode == 2||mode==4)
@@ -200,6 +230,11 @@ for i = 1:T
     ops = sdpsettings('verbose',0);
     optimize(con,obj,ops);
     ut(:,i) = value(u);
+    
+    %EWH model
+    uet(:,i) = (Tref/CO - CO1*Tempt(:,i) - CO2*Troom + CO3)/CO4;
+    
+    p_ch(i)=0;
     end
     
     if ( mode == 3)
@@ -213,8 +248,33 @@ for i = 1:T
     end
     end
     
+    %Limits on the input EWH
+    if (uet(:,i) < uetmin)
+       uet(:,i) = uetmin;
+    elseif(uet(:,i) > uetmax)
+       uet(:,i) = uetmax;
+    end
+    
+    if ( mode == 3)
+    %Power left for the EV
+    if(sum(sum(ut(:,i))) + uet(:,i) < Energy_PV_forecast)    
+           p_ch(i) =  Energy_PV_forecast - sum(ut(:,i),1) - uet(:,i);
+           
+           if(p_ch(i) > 10.5)
+               p_ch(i) = 10.5;
+           end
+    end
+    end
+    
     xt(:,i+1) = A*xt(:,i) + Bu*ut(:,i) + Bd*d_pred(:,i); 
-     
+    
+    Tempt(:,i+1) = CO*(CO1*Tempt(:,i) + CO2*Troom - CO3 + CO4*uet(:,i));
+    
+    SOC(i+1)  = a*SOC(i) + b_ch*p_ch(i)/3;
+    
+    if(SOC(i+1)>100)
+        SOC(i+1) = 100;
+    end
     %Energy exchanged with the grid
     p(i) = PV_pred(:,i) - sum(ut(:,i),1);
     
@@ -234,6 +294,9 @@ end
 t = t./3;
 figure
 % subplot(2,3,1)
+figure;
 plot(t, yt(:,:))
-hold on
+figure;
+plot(t, Tempt(:,1:end-1))
+
 

@@ -18,10 +18,12 @@
 % xbt - State of the battery storage as a function of time
 
 
-function [ xt, yt, ut, t, et, xbt, cost, vt, cpt, uet, Tempt] = simBuildStorage_EWH(controller, T, fhandle, N, w_k)
+function [xt, yt, ut, t, pt, xbt, cost, p_bt, cpt, uet, Tempt] = simBuildStorage_EWH(controller, T, fhandle, N, w_k)
 load building.mat;
 load battery.mat;
-load PV_power;
+load PV_power.mat;
+load EWH_parameters.mat;
+PV_power = 1.5*power_PV;
 % Parameters of the Building Model
 A = ssM.A;
 Bu = ssM.Bu;
@@ -53,23 +55,18 @@ t = zeros(1,T);
 Tempt = zeros(1,T); %EWH temperature
 uet = zeros(1,T); %EWH input
 
-et = zeros(1,T);
+pt = zeros(1,T);
 xbt = zeros(1,T);
-vt = zeros(1,T);
+p_bt = zeros(1,T);
 
 cpt = zeros(1,T);
 sbt = zeros(1,T);
 cost = 0;
 
 %EWH parameters
-a1 = 128.38; %-> [J/min C degrees]
-c_w = 4.1813; %-> [J/g C degrees]
-m_w = 196.82; %-> [kg]
-C1 = 8.22*10^5; %-> [J/C degrees]
 Tin = 10; %-> [C degrees]
 Tout = 60; %-> [C degrees]
-Troom = 22; %-> [C degrees]
-Pmax = 4.5; %-> [kW]
+
 
 for i = 1:T
 [d_pred, cp, sb, PV_pred] = fhandle(i, N);
@@ -78,29 +75,31 @@ for i = 1:T
 xt(:,i) = x;
 ut(:,i) = U(1:nu,1);
 uet(:,i) = U(end,1);
-et(:,i) = U(end-1,1);
-vt(:,i) = U(end-2,1);
+pt(:,i) = U(end-1,1);
+p_bt(:,i) = U(end-2,1);
 xbt(:,i) = xb;
 cpt(:,i) = cp(1,1);
 sbt(:,i) = sb(1,1);
 Tempt(:,i) = Temp1;
 yt(:,i) = C*x;
 t(1,i) = i;
-if(et(:,i)>0)
-cost = cost + cpt(:,i)*et(:,i)/3;
+
+if(pt(:,i)>0)
+cost = cost + cpt(:,i)*pt(:,i)/3;
 end
 
 disp(['Iteration ' int2str(i)]);
 yalmiperror(id);
+
 x = A*x + Bu*ut(:,i) + Bd*d_pred(:,1);
-if(vt(:,i)>0)
-xb = a*xb + b_ch*vt(:,i)/3;
+
+if(p_bt(:,i)>0)
+xb = a*xb + b_ch*p_bt(:,i)/3;
 else
-xb = a*xb + 1/b_dch*vt(:,i)/3;
+xb = a*xb + 1/b_dch*p_bt(:,i)/3;
 end
 
-Temp1 = ((1+20*30*a1/(60*2*C1))^(-1))*((1-20*30*a1/(60*2*C1))*Temp1 + 20*30*a1/(60*C1)*d_pred(1,1) - 20*30*1/m_w*w_k*(Tout - Tin) + 30*20/(C1)*uet(:,i)*1000);%EWH model
-
+Temp1 = CO*(CO1*Temp1 + CO2*d_pred(1,1) - CO3*w_k*(Tout - Tin) + CO4*uet(:,i));%EWH model
 end
 
 %% Generating the Plots
@@ -185,7 +184,7 @@ ylabel('Storage State');
 
 % figure
 subplot(2,1,2)
-plot(t,et(1,:))
+plot(t,pt(1,:))
 hold on
 plot(t,10*cpt(1,:),'r')
 legend('Electrical Power Purchased','High/Low Price Time')
@@ -194,7 +193,7 @@ ylabel('Power purchased (kW)');
 
 
 figure
-plot(t,vt(1,:))
+plot(t,p_bt(1,:))
 hold on
 plot(t,10*cpt(1,:),'r')
 legend('Power to storage Purchased (v)','High/Low Price Time')

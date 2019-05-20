@@ -33,7 +33,7 @@ Ts =60;% ssM.timestep;
 % Parameters of the Storage Model
 a = ssModel.A;
 b = ssModel.Bu; 
-yref=[24;24;24];
+yref=[22;22;22];
 umax = 15; %kW
 umin = 0;  %kW
 
